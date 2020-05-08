@@ -134,7 +134,9 @@ def main(args, conn=None, close_conn=True):
         '''
         CREATE TABLE classes (
             class_id TEXT PRIMARY KEY,
-            class_name TEXT NOT NULL
+            class_name TEXT NOT NULL,
+            gs_course_id INTEGER,
+            gs_token TEXT
         )
         ''',
         '''
@@ -143,6 +145,8 @@ def main(args, conn=None, close_conn=True):
             class_id TEXT REFERENCES classes (class_id) NOT NULL,
             assignment_name TEXT NOT NULL,
             seed INTEGER,
+            gs_assignment_id INTEGER,
+            submit_pdfs BOOLEAN NOT NULL,
             PRIMARY KEY (assignment_id, class_id)
         )
         ''',

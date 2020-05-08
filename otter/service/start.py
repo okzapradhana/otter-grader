@@ -25,8 +25,10 @@ try:
     from tornado.ioloop import IOLoop
     from tornado.queues import Queue
     from concurrent.futures import ThreadPoolExecutor
+    from nb2pdf import convert
 
     from ..containers import grade_assignments
+    from ..generate.token import APIClient
     from ..utils import connect_db
 
     OTTER_SERVICE_DIR = "/otter-service"
@@ -314,7 +316,7 @@ try:
 
         cursor.execute(
             """
-            SELECT seed
+            SELECT seed, gs_assignment_id, submit_pdfs
             FROM assignments
             WHERE assignment_id = %s AND class_id = %s
             """,
@@ -323,6 +325,21 @@ try:
         assignment_record = cursor.fetchall()
         assert len(assignment_record) == 1, "Assignment {} for class {} not found".format(assignment_id, class_id)
         seed = int(assignment_record[0][0]) if assignment_record[0][0] else None
+        gs_assignment_id = int(assignment_record[0][1]) if assignment_record[0][1] else None
+        submit_pdfs = bool(assignment_record[0][2]) if assignment_record[0][2] else None
+
+        cursor.execute(
+            """
+            SELECT gs_course_id, gs_token
+            FROM classes
+            WHERE class_id = %s
+            """,
+            (class_id, )
+        )
+        class_record = cursor.fetchall()
+        assert len(class_record) == 1, "Class {} not found".format(class_id)
+        gs_course_id = int(class_record[0][0]) if class_record[0][0] else None
+        gs_token = str(class_record[0][1]) if class_record[0][1] else None
 
         cursor.execute(
             """
@@ -336,6 +353,14 @@ try:
         user_record = cursor.fetchall()
         row = user_record[0]
         username = str(row[0] or row[1])
+
+
+        if submit_pdfs:
+            assert all([gs_assignment_id, gs_course_id, gs_token])
+            client = APIClient(token=gs_token)
+            convert(file_path, filtering=False)
+            client.upload_pdf_submission(gs_course_id, gs_assignment_id, username, os.path.splitext(file_path) + ".pdf")
+
 
         # Run grading function in a docker container
         stdout = BytesIO()

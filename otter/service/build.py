@@ -25,7 +25,7 @@ RUN pip3 install -r /home/{{ requirements_filename }}{% endif %}{% for file in f
 ADD {{ file }} /home/notebooks{% endfor %}
 """)
 
-def write_class_info(class_id, class_name, conn):
+def write_class_info(class_id, class_name, gs_course_id, gs_token, conn):
     """Writes the given class_name to the database, auto-generating a class_id
 
     Args:
@@ -36,17 +36,17 @@ def write_class_info(class_id, class_name, conn):
         class_id: Class ID for newly added class.
     """
     cursor = conn.cursor()
-    insert_command = "INSERT INTO classes (class_id, class_name) \
-        VALUES(%s, %s)"#.format(class_name)
+    insert_command = "INSERT INTO classes (class_id, class_name, gs_course_id, gs_token) \
+        VALUES(%s, %s, %s, %s)"#.format(class_name)
     try:
-        cursor.execute(insert_command, (class_id, class_name))
+        cursor.execute(insert_command, (class_id, class_name, gs_course_id, gs_token))
     except UniqueViolation:
         pass
     conn.commit()
     cursor.close()
     return class_id
 
-def write_assignment_info(assignment_id, class_id, assignment_name, seed, conn):
+def write_assignment_info(assignment_id, class_id, assignment_name, seed, gs_assignment_id, submit_pdfs, conn):
     """Inserts/Updates assignment class_id and assignment_name in database. Inserts if assignment_id
         is not present. Updates if assignment_id is present.
 
@@ -69,16 +69,16 @@ def write_assignment_info(assignment_id, class_id, assignment_name, seed, conn):
     # Update assignment_name
     if cursor.rowcount == 1:
         sql_command = """UPDATE assignments
-                        SET assignment_name = %s, seed = %s
+                        SET assignment_name = %s, seed = %s, gs_assignment_id = %s, submit_pdfs = %s
                         WHERE assignment_id = %s AND class_id = %s
                         """#.format(assignment_id, class_id, assignment_name, assignment_name)
-        cursor.execute(sql_command, (assignment_name, seed, assignment_id, class_id))
+        cursor.execute(sql_command, (assignment_name, seed, gs_assignment_id, submit_pdfs, assignment_id, class_id))
     # Else, just insert
     else:
-        sql_command = """INSERT INTO assignments (assignment_id, class_id, assignment_name, seed)
-                        VALUES (%s, %s, %s, %s)
+        sql_command = """INSERT INTO assignments (assignment_id, class_id, assignment_name, seed, gs_assignment_id, submit_pdfs)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         """#.format(assignment_id, class_id, assignment_name, assignment_name)
-        cursor.execute(sql_command, (assignment_id, class_id, assignment_name, seed))
+        cursor.execute(sql_command, (assignment_id, class_id, assignment_name, seed, gs_assignment_id, submit_pdfs))
 
     conn.commit()
     cursor.close()
@@ -100,18 +100,27 @@ def main(args, conn=None, close_conn=True):
         config = yaml.safe_load(f)
 
     assignments = config["assignments"]
-    assignment_cfs = [(a["name"], a["assignment_id"], a.get("seed", None)) for a in assignments]
+    assignment_cfs = [
+        (a["name"], a["assignment_id"], a.get("seed", None), a.get("gs_assignment_id", None), a.get("submit_pdfs", False)) 
+        for a in assignments
+    ]
     ids = [a["assignment_id"] for a in assignments]
     assert len(ids) == len(set(ids)), "Found non-unique assignment IDs in conf.yml"
 
     # Use one global connection for all db-related commands
     if conn is None:
         conn = connect_db(args.db_host, args.db_user, args.db_pass, args.db_port)
-    class_id = write_class_info(config["class_id"], config["class_name"], conn)
+    class_id = write_class_info(
+        config["class_id"], 
+        config["class_name"], 
+        config.get("gs_course_id", None), 
+        config.get("gs_token", None), 
+        conn
+    )
 
     # write to the database
-    for name, assignment_id, seed in assignment_cfs:
-        write_assignment_info(assignment_id, class_id, name, seed, conn)
+    for name, assignment_id, seed, gs_assignment_id, submit_pdfs in assignment_cfs:
+        write_assignment_info(assignment_id, class_id, name, seed, gs_assignment_id, submit_pdfs, conn)
 
     # TODO: start building docker images
     for a in assignments:
