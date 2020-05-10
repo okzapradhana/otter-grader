@@ -356,10 +356,13 @@ try:
 
 
         if submit_pdfs:
-            assert all([gs_assignment_id, gs_course_id, gs_token])
-            client = APIClient(token=gs_token)
-            convert(file_path, filtering=False)
-            client.upload_pdf_submission(gs_course_id, gs_assignment_id, username, os.path.splitext(file_path) + ".pdf")
+            try:
+                assert all([gs_assignment_id, gs_course_id, gs_token])
+                client = APIClient(token=gs_token)
+                convert(file_path, filtering=False)
+                client.upload_pdf_submission(gs_course_id, gs_assignment_id, username, os.path.splitext(file_path) + ".pdf")
+            except AssertionError:
+                print("Gradescope submission for submission {} unsuccessful".format(submission_id))
 
 
         # Run grading function in a docker container
@@ -461,7 +464,7 @@ except ImportError:
     # don't need requirements to use otter without otter service
     MISSING_PACKAGES = True
 
-def main(cli_args):
+def main(args):
     if MISSING_PACKAGES:
         raise ImportError(
             "Missing some packages required for otter service. "
@@ -472,7 +475,7 @@ def main(cli_args):
     global CONN
     global ARGS
 
-    ARGS = cli_args
+    ARGS = args
     CONN = connect_db(ARGS.db_host, ARGS.db_user, ARGS.db_pass, ARGS.db_port)
 
     port = ARGS.port
